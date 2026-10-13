@@ -40,9 +40,9 @@ const CopyModalInner: React.FC<CopyModalProps & { investor: PopularInvestor }> =
   const stopLossAmount = (amount * (stopLossPercent / 100)).toFixed(0);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn" onClick={onClose}>
       <div 
-        className="w-full max-w-md bg-[#181b12] border border-white/15 rounded-3xl shadow-2xl p-6 sm:p-7 relative text-left"
+        className="w-full max-w-md max-h-[94vh] overflow-y-auto bg-[#181b12] border border-white/15 rounded-3xl shadow-2xl p-5 sm:p-7 relative text-left"
         onClick={(e) => e.stopPropagation()}
       >
         <button

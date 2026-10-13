@@ -33,6 +33,7 @@ export interface SiteConfig {
   social: Record<'facebook' | 'instagram' | 'linkedin' | 'x' | 'youtube' | 'telegram', string>;
   apps: { ios: string; android: string };
   liveChatScript: string;
+  liveChat?: { provider: 'none' | 'smartsupp' | 'tawk' | 'script'; key?: string; src?: string };
   minDeposit: number;
   minWithdrawal: number;
   practiceBalance: number;
@@ -95,6 +96,7 @@ const DEFAULT_CONFIG: SiteConfig = {
   social: { facebook: '', instagram: '', linkedin: '', x: '', youtube: '', telegram: '' },
   apps: { ios: '', android: '' },
   liveChatScript: '',
+  liveChat: { provider: 'none' },
   minDeposit: 100,
   minWithdrawal: 50,
   practiceBalance: 100000,
@@ -166,7 +168,9 @@ interface BrokerageContextType {
 
   // Trading
   closePosition: (posId: string) => void;
-  openPosition: (symbol: string, type: 'BUY' | 'SELL', amount: number, leverage?: number) => Promise<UserPosition>;
+  openPosition: (symbol: string, type: 'BUY' | 'SELL', amount: number, leverage?: number, account?: 'real' | 'virtual') => Promise<UserPosition>;
+  tradeAccount: 'real' | 'virtual';
+  setTradeAccount: (a: 'real' | 'virtual') => void;
   startCopy: (investorId: string | number, amount: number, stopLossPercent: number, copyOpenTrades: boolean) => Promise<void>;
   stopCopy: (copyId: string) => Promise<void>;
   toggleAssetHalt: (symbol: string, halted: boolean) => void;
@@ -184,6 +188,7 @@ export const BrokerageProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [adminData, setAdminData] = useState<any>(null);
   const [quotes, setQuotes] = useState<Record<string, { price: number; deltaPercent: number; halted: boolean }>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [tradeAccount, setTradeAccount] = useState<'real' | 'virtual'>('real');
   const toastId = useRef(0);
 
   const notify = useCallback((text: string, type: Toast['type'] = 'success') => {
@@ -286,7 +291,7 @@ export const BrokerageProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [adminData, userData]);
 
   const instruments: Instrument[] = useMemo(
-    () => INSTRUMENTS.map(i => (quotes[i.symbol] ? { ...i, price: quotes[i.symbol].price, deltaPercent: quotes[i.symbol].deltaPercent } : i)),
+    () => INSTRUMENTS.map(i => (quotes[i.symbol] ? { ...i, price: quotes[i.symbol].price, deltaPercent: quotes[i.symbol].deltaPercent, halted: quotes[i.symbol].halted } : i)),
     [quotes]
   );
 
@@ -517,8 +522,8 @@ export const BrokerageProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       .catch(e => notify(errMsg(e), 'error'));
   };
 
-  const openPosition = async (symbol: string, type: 'BUY' | 'SELL', amount: number, leverage = 1) => {
-    const r = await api.post('/api/me/positions', { symbol, type, amount, leverage });
+  const openPosition = async (symbol: string, type: 'BUY' | 'SELL', amount: number, leverage = 1, account: 'real' | 'virtual' = tradeAccount) => {
+    const r = await api.post('/api/me/positions', { symbol, type, amount, leverage, account });
     applyUserState(r.state);
     if (adminSession) loadAdmin();
     return r.position as UserPosition;
@@ -553,7 +558,7 @@ export const BrokerageProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       approveKyc, rejectKyc, requestKycResubmit, updateAmlRisk, uploadKycFile, submitKycApplication,
       approveFunding, rejectFunding, manualBalanceAdjustment, submitDeposit, submitWithdrawal, savePayments,
       sendEmail, markEmailAsRead, deleteEmail,
-      closePosition, openPosition, startCopy, stopCopy, toggleAssetHalt, resetPractice,
+      closePosition, openPosition, tradeAccount, setTradeAccount, startCopy, stopCopy, toggleAssetHalt, resetPractice,
     }}>
       {children}
     </BrokerageContext.Provider>

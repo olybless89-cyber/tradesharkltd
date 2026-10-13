@@ -5,6 +5,7 @@ import { config } from '../config';
 import { mailProvider, queueMail } from '../mailer';
 import { createMessage, marketSnapshot, getQuote, getMarketSettings } from '../services';
 import { rateLimit } from '../rateLimit';
+import { publicLiveChat } from '../settings';
 import { INSTRUMENTS, POPULAR_INVESTORS } from '../../src/data/mockData';
 
 export const publicRouter = Router();
@@ -32,7 +33,8 @@ publicRouter.get('/config', (_req, res) => {
     regulatoryText: b.regulatoryText,
     social: b.social,
     apps: b.apps,
-    liveChatScript: b.liveChatScript,
+    liveChatScript: '',
+    liveChat: publicLiveChat(),
     minDeposit: config.minDeposit,
     minWithdrawal: config.minWithdrawal,
     practiceBalance: config.practiceBalance,

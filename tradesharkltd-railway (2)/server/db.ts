@@ -12,11 +12,11 @@ import { config } from './config';
 
 export type Collection =
   | 'users' | 'admins' | 'transactions' | 'auditLogs' | 'positions' | 'emails'
-  | 'copies' | 'tokens' | 'submissions' | 'subscribers' | 'settings';
+  | 'copies' | 'tokens' | 'submissions' | 'subscribers' | 'settings' | 'mailLog';
 
 const COLLECTIONS: Collection[] = [
   'users', 'admins', 'transactions', 'auditLogs', 'positions', 'emails',
-  'copies', 'tokens', 'submissions', 'subscribers', 'settings'
+  'copies', 'tokens', 'submissions', 'subscribers', 'settings', 'mailLog'
 ];
 
 type Doc = { id: string; [k: string]: any };

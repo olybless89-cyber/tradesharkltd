@@ -33,6 +33,7 @@ import { UserSidebar, UserTab } from './UserPortal/UserSidebar';
 import { UserKycTab } from './UserPortal/UserKycTab';
 import { UserInboxTab } from './UserPortal/UserInboxTab';
 import { UserLoginGate } from './UserPortal/UserLoginGate';
+import { UserMarketsTab } from './UserPortal/UserMarketsTab';
 import { errMsg } from '../lib/api';
 
 interface UserDashboardModalProps {
@@ -81,7 +82,9 @@ const UserDashboardInner: React.FC<UserDashboardModalProps> = ({
     changePassword,
     updateProfile,
     resendVerification,
-    resetPractice
+    resetPractice,
+    tradeAccount,
+    setTradeAccount
   } = useBrokerage();
   const currentUser = maybeUser!;
 
@@ -93,7 +96,8 @@ const UserDashboardInner: React.FC<UserDashboardModalProps> = ({
 
   const [activeTab, setActiveTab] = useState<UserTab>(() => (TAB_IDS.includes(initialTab as UserTab) ? initialTab as UserTab : 'portfolio'));
   React.useEffect(() => { if (initialTab && TAB_IDS.includes(initialTab as UserTab)) setActiveTab(initialTab as UserTab); }, [initialTab]);
-  const [accountType, setAccountType] = useState<'real' | 'virtual'>('real');
+  const accountType = tradeAccount;
+  const setAccountType = setTradeAccount;
   const [copiedLink, setCopiedLink] = useState(false);
   
   // Deposit form state
@@ -111,7 +115,7 @@ const UserDashboardInner: React.FC<UserDashboardModalProps> = ({
 
   const copiedInvestors = copies.filter(c => c.userId === currentUser.id);
 
-  const userPositions = positions.filter(p => p.userId === currentUser.id);
+  const userPositions = positions.filter(p => p.userId === currentUser.id && (p.account || 'real') === accountType);
   const userTransactions = transactions.filter(t => t.userId === currentUser.id);
   const totalPositionsProfit = userPositions.reduce((acc, p) => acc + p.profit, 0);
 
@@ -169,7 +173,7 @@ const UserDashboardInner: React.FC<UserDashboardModalProps> = ({
   const tabTitles: Record<UserTab, { title: string; subtitle: string }> = {
     portfolio: { title: 'Portfolio Overview & Wallet', subtitle: 'Real-time equity breakdown and allocation analytics' },
     positions: { title: 'Open CFD & Margin Positions', subtitle: 'Manage active leverage contracts and take-profit/stop-loss' },
-    markets: { title: 'Live Screener & Markets', subtitle: 'Institutional execution across 5,000+ instruments' },
+    markets: { title: 'Buy Stocks, Crypto & More', subtitle: 'Choose an instrument and place a Buy order from your real or practice account' },
     deposit: { title: 'Deposit Client Capital', subtitle: 'Deposit funds into your trading account' },
     withdraw: { title: 'Disburse Funds', subtitle: 'Secure disbursements to validated bank accounts' },
     kyc: { title: 'KYC & Regulatory Verification', subtitle: 'Identity and address verification' },
@@ -309,6 +313,8 @@ const UserDashboardInner: React.FC<UserDashboardModalProps> = ({
               }} />
             )}
 
+          {activeTab === 'markets' && <UserMarketsTab onTrade={onOpenTrade} />}
+
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'portfolio' && (
             <div className="space-y-6">
@@ -334,23 +340,20 @@ const UserDashboardInner: React.FC<UserDashboardModalProps> = ({
                   <span className="text-2xl font-bold text-[#6dff8a] font-mono">
                     ${copiedInvestors.reduce((a, b) => a + b.currentValue, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
-                  <div className="text-[11px] text-[#6dff8a]">+$1,634.10 combined profit</div>
+                  <div className={`text-[11px] ${copiedInvestors.reduce((a, b) => a + b.profit, 0) >= 0 ? 'text-[#6dff8a]' : 'text-[#ff5c5c]'}`}>
+                    {copiedInvestors.length ? `${copiedInvestors.reduce((a, b) => a + b.profit, 0) >= 0 ? '+' : ''}$${copiedInvestors.reduce((a, b) => a + b.profit, 0).toFixed(2)} combined P&L` : 'Not copying anyone yet'}
+                  </div>
                 </div>
               </div>
 
               {/* Quick Actions Bar */}
               <div className="flex flex-wrap gap-3">
                 <button
-                  disabled={!currentUser.allowTrading}
-                  onClick={() => onOpenTrade('NVDA')}
-                  className={`px-5 py-2.5 rounded-full font-bold text-xs flex items-center gap-2 transition-colors ${
-                    currentUser.allowTrading
-                      ? 'bg-[#6dff8a] text-[#15170f] hover:bg-[#5ce077]'
-                      : 'bg-white/10 text-white/30 cursor-not-allowed'
-                  }`}
+                  onClick={() => setActiveTab('markets')}
+                  className="px-5 py-2.5 rounded-full font-bold text-xs flex items-center gap-2 transition-colors bg-[#6dff8a] text-[#15170f] hover:bg-[#5ce077]"
                 >
                   <PlusCircle className="w-4 h-4" />
-                  <span>{currentUser.allowTrading ? 'Trade Stocks & Crypto' : 'Trading Restricted'}</span>
+                  <span>Buy Stocks &amp; Crypto</span>
                 </button>
 
                 <button
@@ -381,7 +384,7 @@ const UserDashboardInner: React.FC<UserDashboardModalProps> = ({
               {/* Open Positions Quick Preview */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-white">Active Positions ({userPositions.length})</h4>
+                  <h4 className="text-sm font-bold text-white">{accountType === 'virtual' ? 'Practice' : 'Active'} Positions ({userPositions.length})</h4>
                   <button 
                     onClick={() => setActiveTab('positions')} 
                     className="text-xs text-[#6dff8a] hover:underline"
@@ -413,8 +416,8 @@ const UserDashboardInner: React.FC<UserDashboardModalProps> = ({
                           <div className="text-sm font-bold text-white font-mono">
                             ${(parseFloat(pos.units) * pos.currentPrice).toFixed(2)}
                           </div>
-                          <div className="text-xs font-semibold text-[#6dff8a]">
-                            +${pos.profit.toFixed(2)} (+{pos.profitPercent}%)
+                          <div className={`text-xs font-semibold ${pos.profit >= 0 ? 'text-[#6dff8a]' : 'text-[#ff5c5c]'}`}>
+                            {pos.profit >= 0 ? '+' : '-'}${Math.abs(pos.profit).toFixed(2)} ({pos.profitPercent >= 0 ? '+' : ''}{pos.profitPercent}%)
                           </div>
                         </div>
 
@@ -441,27 +444,22 @@ const UserDashboardInner: React.FC<UserDashboardModalProps> = ({
                   <p className="text-xs text-[#a3a89e]">Manage active trade tickets or close out positions to realize profits.</p>
                 </div>
                 <button
-                  disabled={!currentUser.allowTrading}
-                  onClick={() => onOpenTrade('NVDA')}
-                  className={`px-4 py-2 rounded-xl font-bold text-xs transition-all ${
-                    currentUser.allowTrading
-                      ? 'bg-[#6dff8a] text-[#15170f] hover:bg-[#5ce077]'
-                      : 'bg-white/10 text-white/30 cursor-not-allowed'
-                  }`}
+                  onClick={() => setActiveTab('markets')}
+                  className="px-4 py-2 rounded-xl font-bold text-xs transition-all bg-[#6dff8a] text-[#15170f] hover:bg-[#5ce077]"
                 >
-                  + New Trade
+                  + Buy / New Trade
                 </button>
               </div>
 
               {userPositions.length === 0 ? (
                 <div className="py-12 text-center text-white/60 space-y-3">
                   <Layers className="w-10 h-10 mx-auto text-white/30" />
-                  <p className="text-sm">No open positions currently active for this account.</p>
+                  <p className="text-sm">{accountType === 'virtual' ? 'No open practice positions yet.' : 'No open positions yet.'}</p>
                   <button
-                    onClick={() => onOpenTrade('BTC')}
+                    onClick={() => setActiveTab('markets')}
                     className="px-4 py-2 rounded-full bg-[#6dff8a] text-[#15170f] font-bold text-xs"
                   >
-                    Explore Markets
+                    Browse &amp; Buy Stocks
                   </button>
                 </div>
               ) : (
@@ -495,8 +493,8 @@ const UserDashboardInner: React.FC<UserDashboardModalProps> = ({
                           <td className="p-3.5 font-mono">${pos.entryPrice.toFixed(2)}</td>
                           <td className="p-3.5 font-mono font-bold">${pos.currentPrice.toFixed(2)}</td>
                           <td className="p-3.5 font-mono">${(parseFloat(pos.units) * pos.currentPrice).toFixed(2)}</td>
-                          <td className="p-3.5 font-mono font-bold text-[#6dff8a]">
-                            +${pos.profit.toFixed(2)} (+{pos.profitPercent}%)
+                          <td className={`p-3.5 font-mono font-bold ${pos.profit >= 0 ? 'text-[#6dff8a]' : 'text-[#ff5c5c]'}`}>
+                            {pos.profit >= 0 ? '+' : '-'}${Math.abs(pos.profit).toFixed(2)} ({pos.profitPercent >= 0 ? '+' : ''}{pos.profitPercent}%)
                           </td>
                           <td className="p-3.5 text-right">
                             <button

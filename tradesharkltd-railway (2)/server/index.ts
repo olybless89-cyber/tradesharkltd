@@ -12,6 +12,7 @@ import { authRouter } from './routes/auth';
 import { userRouter } from './routes/user';
 import { adminRouter } from './routes/admin';
 import { publicRouter } from './routes/public';
+import { webhookRouter } from './routes/webhooks';
 import { SITE_PAGES } from '../src/data/pages';
 import { INSTRUMENTS } from '../src/data/mockData';
 
@@ -27,7 +28,7 @@ async function main() {
   const app = express();
   app.set('trust proxy', 1); // Railway sits behind a proxy
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '2mb', verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
 
@@ -38,6 +39,7 @@ async function main() {
     next();
   });
 
+  app.use('/api/webhooks', webhookRouter);
   app.use('/api', publicRouter);
   app.use('/api/auth', authRouter);
   app.use('/api/me', userRouter);
@@ -55,7 +57,7 @@ async function main() {
       .replace(/__APP_NAME__/g, esc(b.appName))
       .replace(/__APP_TAGLINE__/g, esc(b.tagline))
       .replace(/__APP_URL__/g, esc(config.appUrl))
-      .replace('</head>', b.liveChatScript ? `<script src="${esc(b.liveChatScript)}" async></script></head>` : '</head>');
+      ;
 
     app.use('/assets', express.static(path.join(distDir, 'assets'), { immutable: true, maxAge: '1y' }));
     app.use(express.static(distDir, { index: false, maxAge: '1h' }));

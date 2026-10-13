@@ -9,6 +9,7 @@ export interface Instrument {
   avatarBg: string;
   marketCap?: string;
   volume24h?: string;
+  halted?: boolean;
 }
 
 export interface PopularInvestor {
@@ -169,4 +170,5 @@ export interface UserPosition {
   openDate: string;
   invested?: number;
   leverage?: number;
+  account?: 'real' | 'virtual';
 }

@@ -1,6 +1,7 @@
 import { db, newId, nowStamp, shortNumericId } from './db';
 import { config } from './config';
 import { queueMail, sendMail } from './mailer';
+import { getMailSettings } from './settings';
 import { INSTRUMENTS, POPULAR_INVESTORS } from '../src/data/mockData';
 
 // ------------------------------------------------------------------
@@ -26,7 +27,7 @@ const DEPT: Record<Category, string> = {
   MARKET_ALERT: 'Research Desk',
   SUPPORT: 'Support',
 };
-export const deptFrom = (c: Category) => `${brand()} ${DEPT[c] || 'Support'} <${config.mail.fromAddress}>`;
+export const deptFrom = (c: Category) => `${brand()} ${DEPT[c] || 'Support'} <${getMailSettings().fromAddress}>`;
 export const deskAddress = () => `${brand()} Client Desk <${config.brand.supportEmail}>`;
 
 // ------------------------------------------------------------------
@@ -191,9 +192,20 @@ export async function createMessage(input: MessageInput) {
   return msg;
 }
 
-export function notifyAdmins(subject: string, text: string, cta?: { label: string; url: string }, replyTo?: string) {
-  const to = config.admin.notifyEmail;
+export type AdminAlertKind = 'registration' | 'deposits' | 'withdrawals' | 'kyc' | 'messages';
+
+export function notifyAdmins(subject: string, text: string, cta?: { label: string; url: string }, replyTo?: string, kind: AdminAlertKind = 'messages') {
+  const ms = getMailSettings();
+  const to = ms.adminNotifyEmail;
   if (!to) return;
+  const enabled = {
+    registration: ms.notifyRegistration,
+    deposits: ms.notifyDeposits,
+    withdrawals: ms.notifyWithdrawals,
+    kyc: ms.notifyKyc,
+    messages: ms.notifyMessages,
+  }[kind];
+  if (!enabled) return;
   queueMail({ to, subject: `${brand()} Admin: ${subject}`, text, fromName: 'System', cta, replyTo });
 }
 
@@ -289,17 +301,23 @@ export function valuePosition(p: any) {
   };
 }
 
-export async function openPosition(user: any, input: { symbol: string; type: 'BUY' | 'SELL'; amount: number; leverage?: number }) {
+export async function openPosition(user: any, input: { symbol: string; type: 'BUY' | 'SELL'; amount: number; leverage?: number; account?: 'real' | 'virtual' }) {
+  const isPractice = input.account === 'virtual';
+  const balField = isPractice ? 'virtualBalance' : 'realBalance';
   const q = getQuote(input.symbol);
   if (!q) throw new HttpError(400, 'Unknown instrument.');
   if (getMarketSettings()[input.symbol]?.halted) throw new HttpError(409, `${input.symbol} trading is temporarily halted by the risk desk.`);
-  if (!user.allowTrading || user.status === 'Trading Frozen') throw new HttpError(403, 'Trading is currently restricted on your account.');
+  if (!isPractice && (!user.allowTrading || user.status === 'Trading Frozen')) throw new HttpError(403, 'Trading is currently restricted on your account.');
   if (q.category === 'crypto' && !user.allowCrypto) throw new HttpError(403, 'Crypto trading is not enabled on your account.');
   if (input.type === 'SELL' && !user.allowShorting) throw new HttpError(403, 'Short selling is not enabled on your account.');
   const amount = Number(input.amount);
   if (!(amount > 0)) throw new HttpError(400, 'Enter a valid amount.');
-  if (amount > user.realBalance) throw new HttpError(400, `Insufficient balance. Available: ${money(user.realBalance)}.`);
-  if (amount > user.maxPositionLimit) throw new HttpError(400, `Maximum position size is ${money(user.maxPositionLimit)}.`);
+  if (amount > (user[balField] || 0)) {
+    throw new HttpError(400, isPractice
+      ? `Insufficient practice balance. Available: ${money(user.virtualBalance)}.`
+      : `Insufficient balance. Available: ${money(user.realBalance)}. Fund your account from the Deposit tab, or switch to your practice account.`);
+  }
+  if (!isPractice && amount > user.maxPositionLimit) throw new HttpError(400, `Maximum position size is ${money(user.maxPositionLimit)}.`);
   const leverage = Math.max(1, Math.min(Number(input.leverage) || 1, user.leverage || 1));
 
   const units = amount / q.price;
@@ -318,13 +336,15 @@ export async function openPosition(user: any, input: { symbol: string; type: 'BU
     openDate: nowStamp(10),
     invested: amount,
     leverage,
+    account: isPractice ? 'virtual' : 'real',
     ts: Date.now(),
   };
   await db.put('positions', pos);
-  await db.update('users', user.id, { realBalance: Number((user.realBalance - amount).toFixed(2)) });
+  await db.update('users', user.id, { [balField]: Number(((user[balField] || 0) - amount).toFixed(2)) });
+  if (isPractice) return valuePosition(pos);
   await audit(`Client (${user.name})`, 'Position Opened', `${input.type} ${pos.units} ${input.symbol} @ ${money(q.price)} (x${leverage}) - ${money(amount)} allocated.`, 'MARKET', `${user.id} (${user.name})`);
 
-  if (config.mail.tradeConfirmations) {
+  if (getMailSettings().tradeConfirmations) {
     await createMessage({
       userId: user.id,
       category: 'TRADING',
@@ -344,10 +364,12 @@ export async function closePosition(posId: string, actor: { name: string; isAdmi
   const invested = p.invested ?? p.entryPrice * parseFloat(p.units);
   const credit = Math.max(0, invested + p.profit);
   await db.remove('positions', posId);
-  if (user) await db.update('users', user.id, { realBalance: Number((user.realBalance + credit).toFixed(2)) });
+  const balField = p.account === 'virtual' ? 'virtualBalance' : 'realBalance';
+  if (user) await db.update('users', user.id, { [balField]: Number(((user[balField] || 0) + credit).toFixed(2)) });
+  if (p.account === 'virtual') return { credit, profit: p.profit };
   await audit(actor.name, 'Position Closed', `Closed ${p.units} ${p.symbol} at ${money(p.currentPrice)}. Realized P&L: ${money(p.profit)}. Credited ${money(credit)}.`, 'MARKET', user ? `${user.id} (${user.name})` : p.userId);
 
-  if (user && config.mail.tradeConfirmations) {
+  if (user && getMailSettings().tradeConfirmations) {
     await createMessage({
       userId: user.id,
       category: 'TRADING',
@@ -464,7 +486,7 @@ export async function submitDeposit(user: any, amount: number, method: string, n
     subject: `Deposit Request Received: ${money(amount)} via ${method}`,
     body: `Dear ${user.name},\n\nWe have received your deposit request of ${money(amount)} via ${method}.\n\nReference: ${tx.reference}\n\n${instructions}\n\nYour balance will be credited as soon as our treasury desk confirms receipt of funds. You will receive another email when this happens.\n\n${brand()} Treasury Desk`,
   });
-  notifyAdmins(`New deposit request ${money(amount)}`, `${user.name} (${user.email}, ${user.id}) submitted a deposit of ${money(amount)} via ${method}.\nReference: ${tx.reference}`, { label: 'Review funding queue', url: adminUrl('funding') });
+  notifyAdmins(`New deposit request ${money(amount)}`, `${user.name} (${user.email}, ${user.id}) submitted a deposit of ${money(amount)} via ${method}.\nReference: ${tx.reference}`, { label: 'Review funding queue', url: adminUrl('funding') }, undefined, 'deposits');
   return tx;
 }
 
@@ -500,7 +522,7 @@ export async function submitWithdrawal(user: any, amount: number, method: string
     body: `Dear ${user.name},\n\nWe have received your withdrawal request.\n\nAmount: ${money(amount)}\nMethod: ${method}\nDestination: ${tx.destination}\nReference: ${tx.reference}\n\nThe amount has been reserved from your available balance while our treasury desk processes the request. If you did not make this request, contact ${config.brand.supportEmail} immediately.\n\n${brand()} Treasury Desk`,
     priority: 'High',
   });
-  notifyAdmins(`New withdrawal request ${money(amount)}`, `${user.name} (${user.email}, ${user.id}) requested a withdrawal of ${money(amount)} via ${method}.\nDestination: ${tx.destination}\nReference: ${tx.reference}`, { label: 'Review funding queue', url: adminUrl('funding') });
+  notifyAdmins(`New withdrawal request ${money(amount)}`, `${user.name} (${user.email}, ${user.id}) requested a withdrawal of ${money(amount)} via ${method}.\nDestination: ${tx.destination}\nReference: ${tx.reference}`, { label: 'Review funding queue', url: adminUrl('funding') }, undefined, 'withdrawals');
   return tx;
 }
 
@@ -659,7 +681,7 @@ export async function submitKyc(user: any, payload: any) {
     subject: 'KYC Documents Received & In Verification Queue',
     body: `Dear ${payload.fullName},\n\nThank you for submitting your verification details.\n\nDocuments received:\n- Identity document: ${payload.docType} (#${payload.docNumber})\n- Proof of address: ${payload.proofAddressName || 'uploaded'}\n- Selfie / liveness check: uploaded\n\nOur compliance team will review your file shortly and you will be notified by email of the outcome.\n\n${brand()} Compliance Desk`,
   });
-  notifyAdmins(`KYC submitted by ${payload.fullName}`, `${payload.fullName} (${user.email}, ${user.id}) submitted KYC documents for review.`, { label: 'Open KYC desk', url: adminUrl('kyc') });
+  notifyAdmins(`KYC submitted by ${payload.fullName}`, `${payload.fullName} (${user.email}, ${user.id}) submitted KYC documents for review.`, { label: 'Open KYC desk', url: adminUrl('kyc') }, undefined, 'kyc');
 }
 
 export async function approveKyc(userId: string, actor: string, promotedTier?: string) {

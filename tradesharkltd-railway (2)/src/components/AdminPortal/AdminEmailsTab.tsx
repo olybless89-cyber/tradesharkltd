@@ -20,6 +20,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { useBrokerage } from '../../context/BrokerageContext';
+import { api } from '../../lib/api';
 import { EmailMessage, UserAccount } from '../../types';
 
 interface AdminEmailsTabProps {
@@ -81,6 +82,10 @@ export const AdminEmailsTab: React.FC<AdminEmailsTabProps> = ({ onNotify }) => {
   const { users, emails, sendEmail, deleteEmail, config } = useBrokerage();
 
   const [subTab, setSubTab] = useState<'compose' | 'outbox' | 'inbound'>('compose');
+  const [mailProvider, setMailProvider] = useState<string | null>(null);
+  React.useEffect(() => {
+    api.get('/api/admin/settings/mail').then(r => setMailProvider(r.effectiveProvider)).catch(() => undefined);
+  }, []);
   const [selectedRecipient, setSelectedRecipient] = useState<string>('ALL');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -185,6 +190,11 @@ export const AdminEmailsTab: React.FC<AdminEmailsTabProps> = ({ onNotify }) => {
 
   return (
     <div className="space-y-6">
+      {mailProvider === 'log' && (
+        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-200">
+          <b>Emails are not being delivered.</b> Messages you send here still appear in the client's portal inbox, but nothing reaches their email until you connect a provider in <b>Settings → Email</b>.
+        </div>
+      )}
       {/* Top Header & Sub-Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-4">
         <div>

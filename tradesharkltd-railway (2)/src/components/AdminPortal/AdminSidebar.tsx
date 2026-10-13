@@ -121,7 +121,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
     },
     {
       id: 'settings',
-      label: 'Payment Settings',
+      label: 'Settings (Email, Chat, Payments)',
       icon: <Sliders className="w-4 h-4" />,
       group: 'TRADING DESK'
     }

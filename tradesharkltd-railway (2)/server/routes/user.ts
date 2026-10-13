@@ -103,8 +103,8 @@ userRouter.post('/messages/:id/read', wrap(async (req, res) => {
 }));
 
 userRouter.post('/positions', wrap(async (req, res) => {
-  const { symbol, type, amount, leverage } = req.body || {};
-  const position = await openPosition(fresh(req), { symbol, type: type === 'SELL' ? 'SELL' : 'BUY', amount: Number(amount), leverage: Number(leverage) });
+  const { symbol, type, amount, leverage, account } = req.body || {};
+  const position = await openPosition(fresh(req), { symbol, type: type === 'SELL' ? 'SELL' : 'BUY', amount: Number(amount), leverage: Number(leverage), account: account === 'virtual' ? 'virtual' : 'real' });
   res.json({ position, state: userState(req.user.id) });
 }));
 

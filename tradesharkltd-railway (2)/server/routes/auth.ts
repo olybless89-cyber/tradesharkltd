@@ -8,6 +8,7 @@ import {
 import { audit, baseUserRecord, findUserByEmail, findUserByLogin, notifyAdmins, publicUser, createMessage } from '../services';
 import { queueMail } from '../mailer';
 import { rateLimit } from '../rateLimit';
+import { getMailSettings } from '../settings';
 
 export const authRouter = Router();
 
@@ -65,9 +66,10 @@ authRouter.post('/register', rateLimit('register', 10, 3600), async (req, res) =
     subject: `Welcome to ${config.brand.appName}, ${user.name.split(' ')[0]}!`,
     body: `Dear ${user.name},\n\nWelcome to ${config.brand.appName}. Your trading account ${user.id} is ready.\n\nNext steps:\n1. Verify your email address (we sent you a separate link).\n2. Complete identity verification (KYC) in the Verification Centre.\n3. Fund your account and start trading - or practise first with your ${'$'}${config.practiceBalance.toLocaleString()} virtual account.\n\nIf you have any questions, reply to this email or contact ${config.brand.supportEmail}.\n\nThe ${config.brand.appName} Team`,
     cta: { label: 'Open your client portal', url: `${config.appUrl}/dashboard` },
+    sendEmail: getMailSettings().welcomeEmail,
   });
   await sendVerificationEmail(user);
-  notifyAdmins(`New registration: ${user.name}`, `${user.name} (${user.email}) just registered.\nAccount: ${user.id}\nCountry: ${user.country || '-'}\nPhone: ${user.phone || '-'}${referrer ? `\nReferred by: ${referrer.name} (${referrer.id})` : ''}`, { label: 'Open admin console', url: `${config.appUrl}/admin` });
+  notifyAdmins(`New registration: ${user.name}`, `${user.name} (${user.email}) just registered.\nAccount: ${user.id}\nCountry: ${user.country || '-'}\nPhone: ${user.phone || '-'}${referrer ? `\nReferred by: ${referrer.name} (${referrer.id})` : ''}`, { label: 'Open admin console', url: `${config.appUrl}/admin` }, undefined, 'registration');
 
   const expiresAt = issueUserSession(res, user.id, remember !== false);
   res.json({ user: publicUser(user), expiresAt });
@@ -88,7 +90,7 @@ authRouter.post('/login', rateLimit('login', 20, 900), async (req, res) => {
   }
   const ip = clientIp(req);
   await db.update('users', user.id, { lastIp: ip, lastLogin: new Date().toISOString() });
-  if (config.mail.loginAlerts) {
+  if (getMailSettings().loginAlerts) {
     queueMail({
       to: user.email,
       subject: `New sign-in to your ${config.brand.appName} account`,

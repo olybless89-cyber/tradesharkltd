@@ -76,6 +76,12 @@ export const UserSidebar: React.FC<UserSidebarProps> = ({
       group: 'PORTFOLIO & TRADING'
     },
     {
+      id: 'markets',
+      label: 'Buy Stocks & Crypto',
+      icon: <TrendingUp className="w-4 h-4 text-[#6dff8a]" />,
+      group: 'PORTFOLIO & TRADING'
+    },
+    {
       id: 'positions',
       label: 'Active Positions',
       icon: <Layers className="w-4 h-4" />,

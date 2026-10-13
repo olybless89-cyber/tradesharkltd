@@ -8,6 +8,11 @@ import {
   baseUserRecord, findUserByEmail, publicUser, HttpError, Category,
 } from '../services';
 import { createToken } from './auth';
+import { hashPassword } from '../auth';
+import { sendMail } from '../mailer';
+import {
+  publicMailSettings, saveMailSettings, effectiveProvider, getLiveChatSettings, saveLiveChatSettings,
+} from '../settings';
 
 export const adminRouter = Router();
 
@@ -150,6 +155,25 @@ adminRouter.post('/users/:id/password-reset', requireAdmin(), wrap(async (req, r
     cta: { label: 'Choose a new password', url: `${config.appUrl}/reset-password?token=${token}` },
   });
   await audit(actorOf(req), 'Password Reset Issued', `Password reset link emailed to ${u.email}.`, 'USER_MGMT', `${u.id} (${u.name})`);
+  // Also return the link so the admin can share it another way (e.g. WhatsApp) if email is not set up.
+  res.json({ ok: true, resetUrl: `${config.appUrl}/reset-password?token=${token}`, emailProvider: effectiveProvider() });
+}));
+
+adminRouter.post('/users/:id/set-password', requireAdmin('users.write'), wrap(async (req, res) => {
+  const u = mustUser(req.params.id);
+  const password = String(req.body?.password || '');
+  if (password.length < 8) throw new HttpError(400, 'Password must be at least 8 characters.');
+  await db.update('users', u.id, { passwordHash: await hashPassword(password) });
+  // invalidate outstanding reset links
+  for (const t of db.filter<any>('tokens', t => t.userId === u.id && (t.type === 'reset' || t.type === 'setup'))) await db.remove('tokens', t.id);
+  if (req.body?.notify !== false) {
+    await createMessage({
+      userId: u.id, category: 'ACCOUNT', direction: 'outbound', priority: 'High',
+      subject: `Your ${config.brand.appName} password was changed`,
+      body: `Dear ${u.name},\n\nYour account password was changed by our client services team. If you did not request this, contact ${config.brand.supportEmail} immediately.`,
+    });
+  }
+  await audit(actorOf(req), 'Password Set by Admin', `Password manually set for ${u.email}.`, 'USER_MGMT', `${u.id} (${u.name})`);
   res.json({ ok: true });
 }));
 
@@ -278,3 +302,58 @@ adminRouter.get('/users.csv', requireAdmin(), (_req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="clients-${new Date().toISOString().slice(0, 10)}.csv"`);
   res.send(csv);
 });
+
+// ---------- Email settings ----------
+adminRouter.get('/settings/mail', requireAdmin(), (_req, res) => res.json(publicMailSettings()));
+
+adminRouter.put('/settings/mail', requireAdmin('*'), wrap(async (req, res) => {
+  const settings = await saveMailSettings(req.body || {});
+  await audit(actorOf(req), 'Email Settings Updated', `Email provider: ${settings.effectiveProvider}. From: ${settings.fromAddress}.`, 'COMPLIANCE');
+  res.json(settings);
+}));
+
+adminRouter.post('/settings/mail/test', requireAdmin('*'), wrap(async (req, res) => {
+  const to = String(req.body?.to || '').trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(to)) throw new HttpError(400, 'Enter a valid email address to send the test to.');
+  const r = await sendMail({
+    to,
+    subject: `Test email from ${config.brand.appName}`,
+    fromName: 'System',
+    text: `This is a test email from your ${config.brand.appName} admin console.\n\nIf you are reading this, email sending is working correctly.\n\nSent: ${new Date().toUTCString()}`,
+    cta: { label: 'Open admin console', url: `${config.appUrl}/admin` },
+  });
+  if (!r.ok) throw new HttpError(400, r.error || 'Email could not be sent.');
+  res.json({ ok: true, provider: r.provider });
+}));
+
+adminRouter.get('/mail-log', requireAdmin(), (req, res) => {
+  const q = String(req.query.q || '').toLowerCase();
+  const rows = db.all<any>('mailLog')
+    .filter(r => !q || `${r.to} ${r.subject} ${r.status}`.toLowerCase().includes(q))
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, 300);
+  const since = Date.now() - 24 * 3600 * 1000;
+  const today = db.filter<any>('mailLog', r => r.ts >= since);
+  res.json({
+    rows,
+    stats: {
+      sent24h: today.filter(r => r.status === 'sent').length,
+      failed24h: today.filter(r => r.status === 'failed').length,
+      notSent24h: today.filter(r => r.status === 'not-sent').length,
+      received24h: today.filter(r => r.status === 'received').length,
+    },
+  });
+});
+
+// ---------- Live chat ----------
+adminRouter.get('/settings/livechat', requireAdmin(), (_req, res) => res.json(getLiveChatSettings()));
+
+adminRouter.put('/settings/livechat', requireAdmin('*'), wrap(async (req, res) => {
+  try {
+    const s = await saveLiveChatSettings(req.body || {});
+    await audit(actorOf(req), 'Live Chat Updated', `Live chat provider set to ${s.provider}.`, 'COMPLIANCE');
+    res.json(s);
+  } catch (e: any) {
+    throw new HttpError(400, e.message);
+  }
+}));

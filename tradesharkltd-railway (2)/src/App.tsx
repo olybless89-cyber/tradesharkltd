@@ -16,6 +16,7 @@ import { FinalCta } from './components/FinalCta';
 import { Footer } from './components/Footer';
 import { Toasts } from './components/Toasts';
 import { CookieBanner } from './components/CookieBanner';
+import { LiveChat, liveChatEnabled } from './components/LiveChat';
 
 // Modals
 import { SearchModal } from './components/SearchModal';
@@ -174,7 +175,7 @@ export default function App() {
       <Footer onOpenUserDashboard={() => openUserDashboard()} />
 
       {/* Floating AI Assistant Trigger Button */}
-      <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-3">
+      <div className={`fixed right-6 z-40 flex flex-col gap-3 ${liveChatEnabled(config.liveChat?.provider) ? 'bottom-24' : 'bottom-6'}`}>
         {showScrollTop && (
           <button
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
@@ -211,6 +212,7 @@ export default function App() {
       )}
 
       <CookieBanner />
+      <LiveChat />
 
       {/* Modals */}
       <SearchModal isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} onSelectInstrument={(inst) => setTradeInstrument(inst)} />

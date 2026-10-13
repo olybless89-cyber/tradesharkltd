@@ -14,7 +14,7 @@ interface TradeModalProps {
 export const TradeModal: React.FC<TradeModalProps> = (props) => (props.instrument ? <TradeModalInner {...props} instrument={props.instrument} /> : null);
 
 const TradeModalInner: React.FC<TradeModalProps & { instrument: Instrument }> = ({ instrument: initial, onClose, onRequireAuth, onOpenPortal }) => {
-  const { instruments, currentUser, openPosition } = useBrokerage();
+  const { instruments, currentUser, openPosition, tradeAccount, setTradeAccount } = useBrokerage();
   const instrument = instruments.find(i => i.symbol === initial.symbol) || initial;
 
   const [tradeType, setTradeType] = useState<'BUY' | 'SELL'>('BUY');
@@ -36,7 +36,7 @@ const TradeModalInner: React.FC<TradeModalProps & { instrument: Instrument }> = 
     }
     setBusy(true);
     try {
-      const pos = await openPosition(instrument.symbol, tradeType, amount, Number(useLeverage.slice(1)));
+      const pos = await openPosition(instrument.symbol, tradeType, amount, Number(useLeverage.slice(1)), tradeAccount);
       setOrderPlaced({ units: pos.units, price: pos.entryPrice });
     } catch (err) {
       setError(errMsg(err));
@@ -46,9 +46,9 @@ const TradeModalInner: React.FC<TradeModalProps & { instrument: Instrument }> = 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-fadeIn" onClick={onClose}>
       <div 
-        className="w-full max-w-md bg-[#181b12] border border-white/15 rounded-3xl shadow-2xl p-6 sm:p-7 relative text-left"
+        className="w-full max-w-md max-h-[94vh] overflow-y-auto bg-[#181b12] border border-white/15 rounded-3xl shadow-2xl p-5 sm:p-7 relative text-left"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
@@ -66,7 +66,7 @@ const TradeModalInner: React.FC<TradeModalProps & { instrument: Instrument }> = 
             </div>
             <h3 className="text-2xl font-bold text-white">Order Executed</h3>
             <p className="text-sm text-[#a3a89e]">
-              Your {tradeType} order of <strong>${amount.toLocaleString()}</strong> in {instrument.symbol} ({orderPlaced.units} units @ ${orderPlaced.price.toLocaleString()}) was executed. A confirmation email is on its way.
+              Your {tradeAccount === 'virtual' ? 'practice ' : ''}{tradeType} order of <strong>${amount.toLocaleString()}</strong> in {instrument.symbol} ({orderPlaced.units} units @ ${orderPlaced.price.toLocaleString()}) was executed.{tradeAccount === 'real' ? ' A confirmation email is on its way.' : ''}
             </p>
             <div className="pt-4 grid grid-cols-2 gap-2">
               <button
@@ -119,6 +119,31 @@ const TradeModalInner: React.FC<TradeModalProps & { instrument: Instrument }> = 
                 {isPositive ? '+' : ''}{instrument.deltaPercent.toFixed(2)}%
               </div>
             </div>
+
+            {/* Account selector: real money or practice (virtual) */}
+            {currentUser && (
+              <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-white/5 border border-white/10 text-[11px]">
+                {(['real', 'virtual'] as const).map(acc => (
+                  <button
+                    key={acc}
+                    type="button"
+                    onClick={() => setTradeAccount(acc)}
+                    className={`py-2 rounded-lg font-bold transition-all ${tradeAccount === acc ? (acc === 'real' ? 'bg-white text-[#15170f]' : 'bg-sky-400 text-[#0b1a24]') : 'text-white/60 hover:text-white'}`}
+                  >
+                    {acc === 'real' ? 'Real Account' : 'Practice Account'}
+                    <span className="block font-mono font-semibold opacity-80">
+                      ${(acc === 'real' ? currentUser.realBalance : currentUser.virtualBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {instrument.halted && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-300">
+                Trading in {instrument.symbol} is temporarily paused. Please try again later.
+              </div>
+            )}
 
             {/* Buy / Sell Toggle */}
             <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-white/5 border border-white/10">
@@ -213,21 +238,27 @@ const TradeModalInner: React.FC<TradeModalProps & { instrument: Instrument }> = 
             {error && (
               <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-300">{error}</div>
             )}
-            {currentUser && (
-              <div className="text-[11px] text-white/50 flex justify-between"><span>Available balance</span><span className="font-mono text-white">${currentUser.realBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+            {currentUser && tradeAccount === 'real' && currentUser.realBalance < amount && (
+              <div className="p-3 rounded-xl bg-yellow-400/10 border border-yellow-400/30 text-[11px] text-yellow-200 flex items-center justify-between gap-2">
+                <span>Your real balance is too low for this order.</span>
+                <span className="flex gap-2 shrink-0">
+                  <button type="button" onClick={() => onOpenPortal?.('deposit')} className="underline font-bold">Deposit</button>
+                  <button type="button" onClick={() => setTradeAccount('virtual')} className="underline font-bold">Use practice</button>
+                </span>
+              </div>
             )}
 
             {/* Submit CTA */}
             <button
               type="submit"
-              disabled={busy}
+              disabled={busy || !!instrument.halted}
               className={`w-full py-4 rounded-full font-bold text-base flex items-center justify-center gap-2 shadow-lg transition-all transform hover:scale-[1.01] active:scale-[0.99] ${
                 tradeType === 'BUY'
                   ? 'bg-[#6dff8a] hover:bg-[#5ce077] text-[#15170f] shadow-[#6dff8a]/20'
                   : 'bg-[#ff5c5c] hover:bg-[#ff4747] text-white shadow-[#ff5c5c]/20'
               }`}
             >
-              <span>{!currentUser ? 'Log in to Trade' : busy ? 'Executing...' : `Place ${tradeType} Order`}</span>
+              <span>{!currentUser ? 'Log in to Trade' : busy ? 'Executing...' : `${tradeType === 'BUY' ? 'Buy' : 'Sell'} ${instrument.symbol}${tradeAccount === 'virtual' ? ' (Practice)' : ''}`}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </form>

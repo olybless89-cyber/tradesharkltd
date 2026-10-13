@@ -71,3 +71,15 @@ Every client email is also stored in the client's portal inbox; delivery status 
 
 With `DATABASE_URL` all data (and KYC files) are stored in Postgres (tables `app_documents`, `app_files`, created automatically).
 Without it, data goes to `DATA_DIR` - attach a Railway volume or it resets on each deploy.
+
+## Email & live chat (Admin → Settings)
+
+Everything can be configured from the admin console without redeploying:
+
+- **Email → provider**: Resend (recommended, free 3,000/month, sends *and* receives), Brevo (free 300/day), or SMTP (Railway Pro only - Railway blocks SMTP on Free/Hobby).
+- **Sender**: From name/address, reply-to/support address, admin alert email.
+- **Notifications**: welcome, trade confirmations, sign-in alerts, admin alerts (registration, deposits, withdrawals, KYC, messages).
+- **Receiving**: point your domain's MX at Resend Receiving and add the webhook URL shown in the admin; emails to support@yourdomain appear under Emails → Inbound and can be answered from the admin.
+- **Delivery log** + **Send test** button to check everything works.
+- **Live chat**: Smartsupp (paste the chat code), tawk.to, or any script URL.
+- **Login help**: in Users → Control Panel, email a reset link (and copy it), or set a new password directly.

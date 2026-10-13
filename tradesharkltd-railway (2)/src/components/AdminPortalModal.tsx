@@ -44,6 +44,8 @@ import { UserAccount, UserTier, AccountStatus, FundingTransaction } from '../typ
 import { AdminSidebar, AdminTab } from './AdminPortal/AdminSidebar';
 import { AdminEmailsTab } from './AdminPortal/AdminEmailsTab';
 import { AdminKycInspectorModal } from './AdminPortal/AdminKycInspectorModal';
+import { AdminUserPasswordTools } from './AdminPortal/AdminUserPasswordTools';
+import { AdminSettingsTab } from './AdminPortal/AdminSettingsTab';
 import { AdminLoginGate, AdminSession } from './AdminPortal/AdminLoginGate';
 
 interface AdminPortalModalProps {
@@ -270,7 +272,7 @@ const AdminPortalInner: React.FC<AdminPortalModalProps> = ({
     emails: { title: 'Email Dispatch & Client Communications', subtitle: 'Automated compliance notices, margin calls, and broadcast announcements' },
     markets: { title: 'Market Trading & Risk Controls', subtitle: 'Dynamic spread overrides, circuit breaker halting, and slippage management' },
     audit: { title: 'Regulatory Compliance Audit Trail', subtitle: 'Immutable administrative logs with millisecond timestamps' },
-    settings: { title: 'Payment & Deposit Settings', subtitle: 'Bank and crypto details shown to clients and included in deposit emails' }
+    settings: { title: 'Settings', subtitle: 'Email sending & receiving, live chat widget, and deposit payment details' }
   };
 
   if (!adminSession) {
@@ -1333,10 +1335,16 @@ const AdminPortalInner: React.FC<AdminPortalModalProps> = ({
           )}
 
           {activeTab === 'settings' && (
-            <PaymentSettingsTab payments={payments} onSave={async (p) => {
-              try { await savePayments(p); showToast('Payment settings saved. New deposits will show these details.'); }
-              catch (err: any) { showToast(err?.message || 'Could not save settings'); }
-            }} />
+            <AdminSettingsTab
+              isSuperAdmin={ctxAdmin?.role === 'Super-Admin'}
+              onToast={showToast}
+              paymentsPanel={
+                <PaymentSettingsTab payments={payments} onSave={async (p) => {
+                  try { await savePayments(p); showToast('Payment settings saved. New deposits will show these details.'); }
+                  catch (err: any) { showToast(err?.message || 'Could not save settings'); }
+                }} />
+              }
+            />
           )}
 
           {/* TAB 6: AUDIT TRAIL */}
@@ -1539,16 +1547,9 @@ const AdminPortalInner: React.FC<AdminPortalModalProps> = ({
                 💵 Manual Credit / Debit Adjustment
               </button>
 
-              <button
-                onClick={() => {
-                  showToast(`Sent 2FA reset & session termination to ${inspectingUser.email}`);
-                  setInspectingUser(null);
-                }}
-                className="px-3 py-2 rounded-xl bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white text-xs font-semibold transition-colors"
-              >
-                Force Session Reset &amp; Invalidate Keys
-              </button>
             </div>
+
+            <AdminUserPasswordTools userId={inspectingUser.id} email={inspectingUser.email} onToast={showToast} />
           </div>
         </div>
       )}
